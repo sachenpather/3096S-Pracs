@@ -1,3 +1,5 @@
+//EEE3096S PRAC3
+//PTHSAC002
 /* USER CODE BEGIN Header */
 /**
   ******************************************************************************
@@ -110,18 +112,28 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	// Toggle LED0
-	HAL_GPIO_TogglePin(GPIOB, LED7_Pin);
+	  //Flash Pin 7 of Port B
+	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_7);
+
 
 	// ADC to LCD; TODO: Read POT1 value and write to LCD
+	
+	uint32_t ADCval = pollADC(); //get ADC value, reading the pot1 value
 
+	char LCDout[8]; //Array of characters to output
+
+	sprintf(LCDout, "%d", ADCval); //convert int value to string and store in output character array
+	writeLCD(LCDout); //call function to display lcd string
 
 	// Update PWM value; TODO: Get CRR
+	CCR = ADCtoCCR(ADCval); //  updates CCR using ADC value
 
+	//updates the CCR register of Channel 3 of htim3 to the new CCR value
 	__HAL_TIM_SetCompare(&htim3, TIM_CHANNEL_3, CCR);
 
 	// Wait for delay ms
 	HAL_Delay (delay_t);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -340,11 +352,30 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+// Task one:
+//switch frequency between 1 and 2 hz when PA0 pressed
+//implements switching delay of frequencies
+
 void EXTI0_1_IRQHandler(void)
 {
 	// TODO: Add code to switch LED7 delay frequency
+
+	curr_millis = HAL_GetTick(); //gets the current system time in ms, based on internal system clock.
 	
-  
+
+  //LED frequency switch below
+	if (curr_millis - prev_millis >= 100){
+	//if statement is a preventative measure to ensure that only one push button is pushed at a time, 100ms is arbitrary and could be less/more
+		if (delay_t == 500){  //if delay is 2hz, change to 1Hz. 
+				delay_t = 1000; //Frequency at 1Hz
+			}
+			else {  //if delay is nything else switch to 2hz, 
+				delay_t = 500; //Frequency at 2Hz
+			}
+
+		prev_millis = curr_millis;
+	}
+
 	HAL_GPIO_EXTI_IRQHandler(Button0_Pin); // Clear interrupt flags
 }
 
@@ -352,21 +383,46 @@ void EXTI0_1_IRQHandler(void)
 void writeLCD(char *char_in){
     delay(3000);
 	lcd_command(CLEAR);
-
+	//function from LCD library to display string
+	lcd_putstring(char_in);
 }
 
 // Get ADC value
-uint32_t pollADC(void){
+uint32_t pollADC(void){ //reads the analogue signal and returns a value
   // TODO: Complete function body to get ADC val
 
+
+  //Step 1 is to start ADC conversion: this is a built in function from HAL Library which takes ADC address to start ADC conversion when polling method is used.
+	HAL_ADC_Start(&hadc); //hadc is adc handle typedef, structure which holds and manages configuration information
+
+	//Step 2: wait for ADC to finish measuring the signal
+  //uses a polling loop which repeatedly checks status of the ADC, max delay is infinite till polling is completed.
+
+	HAL_ADC_PollForConversion(&hadc, HAL_MAX_DELAY);
+
+  //step 3: read result value:  
+	uint32_t val = HAL_ADC_GetValue(&hadc);
+	//step 4: Stop the ADC
+	HAL_ADC_Stop(&hadc);
 	return val;
 }
 
 // Calculate PWM CCR value
-uint32_t ADCtoCCR(uint32_t adc_val){
+//Task 3
+uint32_t ADCtoCCR(uint32_t adc_val)
+{
   // TODO: Calculate CCR val using an appropriate equation
 
-	return val;
+  //CCR is value to be set for a specific duty cycle to control brightness of LED
+
+	//Duty cycle  = CCR/ARR = adc_val/ADC_MAX, which measures the time that a signal is on compared to period.
+  //since ARR determines period, and is the total time on.  We can calculate manipulate the formula to find CCR
+	//Therefore CCR = (adc_val/ADC_MAX) * ARR
+	//A max adc_val is determined by the maximum ARR value so PWM frequency depends on the adc value
+
+  uint32_t val = (adc_val*47999)/4095; //4095is adc max because adc is configured in 12 bit mode i.e 2^12 - 1, ARR set to a max of 47999
+
+  	return val;
 }
 
 void ADC1_COMP_IRQHandler(void)
@@ -387,6 +443,7 @@ void Error_Handler(void)
   __disable_irq();
   while (1)
   {
+
   }
   /* USER CODE END Error_Handler_Debug */
 }
